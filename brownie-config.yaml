@@ -1,0 +1,49 @@
+# change the build directory to be within react's scope
+project_structure:
+    build: client/src/artifacts
+
+# exclude SafeMath when calculating test coverage
+# https://eth-brownie.readthedocs.io/en/v1.10.3/config.html#exclude_paths
+reports:
+  exclude_contracts:
+    - SafeMath
+dependencies:
+  - smartcontractkit/chainlink-brownie-contracts@0.2.1
+  - OpenZeppelin/openzeppelin-contracts@3.4.0
+compiler:
+  solc:
+    remappings:
+      - '@chainlink=smartcontractkit/chainlink-brownie-contracts@0.2.1'
+      - '@openzeppelin=OpenZeppelin/openzeppelin-contracts@3.4.0'
+
+# automatically fetch contract sources from Etherscan
+autofetch_sources: True
+dotenv: .env
+
+
+networks:
+  default: development
+  development:
+    keyhash: '0x6c3699283bda56ad74f6b855546325b68d482e983852a7a82979cc4807b641f4'
+    fee: 100000000000000000
+    jobId: '29fa9aa13bf1468788b7cc4a500a45b8'
+    update_interval: 60
+    verify: False
+  kovan:
+    vrf_coordinator: '0xdD3782915140c8f3b190B5D67eAc6dc5760C46E9'
+    link_token: '0xa36085F69e2889c224210F603D836748e7dC0088'
+    keyhash: '0x6c3699283bda56ad74f6b855546325b68d482e983852a7a82979cc4807b641f4'
+    fee: 100000000000000000
+    oracle: '0x2f90A6D021db21e1B2A077c5a37B3C7E75D15b7e'
+    jobId: '29fa9aa13bf1468788b7cc4a500a45b8'
+    eth_usd_price_feed: '0x9326BFA02ADD2366b30bacB125260Af641031331'
+    verify: True
+    update_interval: 60
+
+
+wallets:
+  from_key: ${PRIVATE_KEY}
+
+
+# enable output of development artifacts to load with react
+dev_deployment_artifacts: true
