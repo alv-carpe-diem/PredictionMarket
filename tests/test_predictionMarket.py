@@ -1,5 +1,6 @@
-from scripts.helpful_scripts import get_account
-from brownie import PredictionMarket, accounts, exceptions
+from scripts.helpful_scripts import LOCAL_BLOCKCHAIN_ENVIRONMENTS, get_account
+from scripts.deploy import deploy_predictionMarket
+from brownie import accounts, exceptions, network
 from web3 import Web3
 import pytest
 
@@ -9,33 +10,92 @@ class SIDE:
     Pacquiao = 1
 
 
-def test_can_bet_and_withdraw_win():
+def test_get_entrance_fee():
+    if network.show_active() not in LOCAL_BLOCKCHAIN_ENVIRONMENTS:
+        pytest.skip("Only for local testing")
     # Arrange
-    admin = get_account()
-    market = accounts[1]
-    (gambler1, gambler2, gambler3, gambler4) = accounts[2:6]
-    predictionMarket = PredictionMarket.deploy(market, {"from": admin})
+    predictionMarket = deploy_predictionMarket()
 
     # Act
-    tx1 = predictionMarket.placeBet(
-        SIDE.Marcos, {"from": gambler1, "value": Web3.toWei(1, "ether")}
-    )
-    tx1.wait(1)
+    # 2000 eth / usd
+    # usdEntryFee is 50
+    # 2000/1 = 50/x => x=0.025
+    expected_entrance_fee = Web3.toWei(0.025, "ether")
+    entrance_fee = predictionMarket.getEntranceFee()
+    # Assert
+    assert expected_entrance_fee == entrance_fee
 
-    tx2 = predictionMarket.placeBet(
-        SIDE.Pacquiao, {"from": gambler2, "value": Web3.toWei(2, "ether")}
-    )
-    tx2.wait(1)
 
-    tx3 = predictionMarket.placeBet(
-        SIDE.Marcos, {"from": gambler3, "value": Web3.toWei(1, "ether")}
-    )
-    tx3.wait(1)
+def test_cant_enter_unless_started():
+    if network.show_active() not in LOCAL_BLOCKCHAIN_ENVIRONMENTS:
+        pytest.skip("Only for local testing")
+    # Arrange
+    predictionMarket = deploy_predictionMarket()
+    # Act / Assert
+    with pytest.raises(exceptions.VirtualMachineError):
+        predictionMarket.placeBet(
+            SIDE.Marcos,
+            {"from": accounts[1], "value": predictionMarket.getEntranceFee()},
+        )
 
-    tx4 = predictionMarket.placeBet(
-        SIDE.Marcos, {"from": gambler4, "value": Web3.toWei(3, "ether")}
+
+def test_can_start_and_placeBet():
+    if network.show_active() not in LOCAL_BLOCKCHAIN_ENVIRONMENTS:
+        pytest.skip("Only for local testing")
+    # Arrange
+    owner = get_account()
+    gambler1 = accounts[1]
+    predictionMarket = deploy_predictionMarket()
+
+    # Act
+    predictionMarket.startMarket({"from": owner})
+    predictionMarket.placeBet(
+        SIDE.Marcos, {"from": gambler1, "value": predictionMarket.getEntranceFee()}
     )
-    tx4.wait(1)
+
+    # Assert
+    assert predictionMarket.s_players(0) == gambler1
+
+
+def test_can_report_result():
+    if network.show_active() not in LOCAL_BLOCKCHAIN_ENVIRONMENTS:
+        pytest.skip()
+    # Arrange
+    predictionMarket = deploy_predictionMarket()
+    owner = get_account()
+    gambler1 = accounts[1]
+    # Act
+    predictionMarket.startMarket({"from": owner})
+    predictionMarket.placeBet(
+        SIDE.Marcos, {"from": gambler1, "value": predictionMarket.getEntranceFee()}
+    )
+    predictionMarket.reportResult(SIDE.Marcos, SIDE.Pacquiao, {"from": owner})
+    # Assert
+    assert predictionMarket.market_state() == 3
+
+
+def test_can_pick_winner_correctly():
+    if network.show_active() not in LOCAL_BLOCKCHAIN_ENVIRONMENTS:
+        pytest.skip("Only for local testing")
+    # Arrange
+    owner = get_account()
+    (gambler1, gambler2, gambler3, gambler4) = accounts[1:5]
+    predictionMarket = deploy_predictionMarket()
+
+    # Act
+    predictionMarket.startMarket({"from": owner})
+    predictionMarket.placeBet(
+        SIDE.Marcos, {"from": gambler1, "value": predictionMarket.getEntranceFee()}
+    )
+    predictionMarket.placeBet(
+        SIDE.Pacquiao, {"from": gambler2, "value": predictionMarket.getEntranceFee()}
+    )
+    predictionMarket.placeBet(
+        SIDE.Marcos, {"from": gambler3, "value": predictionMarket.getEntranceFee()}
+    )
+    predictionMarket.placeBet(
+        SIDE.Marcos, {"from": gambler4, "value": predictionMarket.getEntranceFee()}
+    )
 
     balanceBefore = {
         "gambler1": gambler1.balance(),
@@ -44,15 +104,7 @@ def test_can_bet_and_withdraw_win():
         "gambler4": gambler4.balance(),
     }
 
-    result_tx = predictionMarket.reportResult(
-        SIDE.Marcos, SIDE.Pacquiao, {"from": market}
-    )
-
-    # Withdrawing gains for winners
-    gamblersWon = [gambler1, gambler3, gambler4]
-    for gambler in gamblersWon:
-        tx = predictionMarket.withdraw({"from": gambler})
-        tx.wait(1)
+    predictionMarket.reportResult(SIDE.Marcos, SIDE.Pacquiao, {"from": owner})
 
     balanceAfter = {
         "gambler1": gambler1.balance(),
@@ -62,24 +114,48 @@ def test_can_bet_and_withdraw_win():
     }
 
     # Assert
-    assert (balanceAfter["gambler1"] - balanceBefore["gambler1"]) > Web3.toWei(
-        1, "ether"
-    )
+    assert (
+        balanceAfter["gambler1"] - balanceBefore["gambler1"]
+    ) > predictionMarket.getEntranceFee()
     assert (balanceAfter["gambler2"] - balanceBefore["gambler2"]) == 0
-    assert (balanceAfter["gambler3"] - balanceBefore["gambler3"]) > Web3.toWei(
-        1, "ether"
-    )
-    assert (balanceAfter["gambler4"] - balanceBefore["gambler4"]) > Web3.toWei(
-        3, "ether"
-    )
+    assert (
+        balanceAfter["gambler3"] - balanceBefore["gambler3"]
+    ) > predictionMarket.getEntranceFee()
+    assert (
+        balanceAfter["gambler4"] - balanceBefore["gambler4"]
+    ) > predictionMarket.getEntranceFee()
 
 
-def test_only_market_can_reportResult():
+def test_bet_and_betspergambler_arrays():
+    if network.show_active() not in LOCAL_BLOCKCHAIN_ENVIRONMENTS:
+        pytest.skip("Only for local testing")
     # Arrange
-    admin = get_account()
-    market = accounts[1]
-    (gambler1, gambler2, gambler3, gambler4) = accounts[2:6]
-    predictionMarket = PredictionMarket.deploy(market, {"from": admin})
-    # Act/Assert
-    with pytest.raises(exceptions.VirtualMachineError):
-        predictionMarket.reportResult(SIDE.Marcos, SIDE.Pacquiao, {"from": gambler1})
+    owner = get_account()
+    (gambler1, gambler2, gambler3, gambler4) = accounts[1:5]
+    predictionMarket = deploy_predictionMarket()
+
+    # Act
+    predictionMarket.startMarket({"from": owner})
+    predictionMarket.placeBet(
+        SIDE.Marcos, {"from": gambler1, "value": predictionMarket.getEntranceFee()}
+    )
+    predictionMarket.placeBet(
+        SIDE.Pacquiao, {"from": gambler2, "value": predictionMarket.getEntranceFee()}
+    )
+    predictionMarket.placeBet(
+        SIDE.Marcos, {"from": gambler3, "value": predictionMarket.getEntranceFee()}
+    )
+    predictionMarket.placeBet(
+        SIDE.Marcos, {"from": gambler4, "value": predictionMarket.getEntranceFee()}
+    )
+
+    # Assert
+    assert predictionMarket.Bets(SIDE.Marcos) == 3 * predictionMarket.getEntranceFee()
+    assert predictionMarket.Bets(SIDE.Pacquiao) == predictionMarket.getEntranceFee()
+
+    assert (
+        predictionMarket.MyBets(SIDE.Marcos, {"from": gambler1})
+        == predictionMarket.getEntranceFee()
+    )
+
+    assert predictionMarket.MyBets(SIDE.Pacquiao, {"from": gambler1}) == 0

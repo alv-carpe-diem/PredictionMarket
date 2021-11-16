@@ -43,6 +43,7 @@ networks:
 
 wallets:
   from_key: ${PRIVATE_KEY}
+  from_key2: ${gambler1PrivateKey}
 
 
 # enable output of development artifacts to load with react

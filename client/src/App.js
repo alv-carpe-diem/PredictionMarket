@@ -19,6 +19,7 @@ class App extends Component {
         predictionMarket: null,
         betPredictions: null,
         myBets: null,
+        entranceFee: null,
     }
 
     componentDidMount = async () => {
@@ -69,8 +70,8 @@ class App extends Component {
         const predictionMarket = await this.loadContract(_chainID,"PredictionMarket")
 
         const bets = await Promise.all([
-                    predictionMarket.methods.bets(SIDE.Pacquiao),
-                    predictionMarket.methods.bets(SIDE.Marcos)
+                    predictionMarket.methods.bets(SIDE.Pacquiao).call(),
+                    predictionMarket.methods.bets(SIDE.Marcos).call()
         ])
         
         const betPredictions = {
@@ -79,7 +80,7 @@ class App extends Component {
                       'Pacquiao',
                   ],
                   datasets: [{
-                      data: [bets[1].toString(), bets[0].toString()],
+                      data: [(bets[1]/(10**18)).toString(), (bets[0]/(10**18)).toString()],
                       backgroundColor: [
                     '#FF6384',
                     '#36A2EB',
@@ -93,14 +94,17 @@ class App extends Component {
         
         const {accounts} = this.state
         const myBets = await Promise.all([
-                predictionMarket.methods.betsPerGambler(accounts[0], SIDE.Marcos),
-                predictionMarket.methods.betsPerGambler(accounts[0], SIDE.Pacquiao),
+                predictionMarket.methods.betsPerGambler(accounts[0], SIDE.Marcos).call(),
+                predictionMarket.methods.betsPerGambler(accounts[0], SIDE.Pacquiao).call(),
         ])
+
+        const entranceFee = await predictionMarket.methods.getEntranceFee().call()
               
         this.setState({
                   predictionMarket,
                   betPredictions,
                   myBets,
+                  entranceFee,
         })
 
     
@@ -108,6 +112,7 @@ class App extends Component {
             typeof predictionMarket === 'undefined'
             || typeof betPredictions === 'undefined'
             || typeof myBets === 'undefined'
+            || typeof entranceFee === 'undefined'
           ) {
             return 'Loading...';
         }
@@ -118,14 +123,11 @@ class App extends Component {
         const {predictionMarket, accounts} = this.state
         e.preventDefault();
         await predictionMarket.methods.placeBet(
-          side
-        ).send({from: accounts[0]})
+          side 
+        ).send({from: accounts[0], value: e.target.elements[0].value*
+          (10**18)})
     }
     
-    withdrawGain = async () => {
-        const {predictionMarket, accounts} = this.state
-        await predictionMarket.methods.withdraw().send({from: accounts[0]})
-    }
 
     loadContract = async (chain, contractName) => {
         // Load a deployed contract instance into a web3 contract object
@@ -157,8 +159,9 @@ class App extends Component {
     render() {
         const {
             web3, accounts, chainid,
-            predictionMarket, betPredictions, myBets
+            predictionMarket, betPredictions, myBets, entranceFee
         } = this.state
+        
 
         if (!web3) {
             return <div>Loading Web3, accounts, and contracts...</div>
@@ -175,11 +178,12 @@ class App extends Component {
 
         const isAccountsUnlocked = accounts ? accounts.length > 0 : false
 
-        return (<div className='container'>
+        return (
+        <div className='container'>
             <div className='row'>
-        <div className='col-sm-12'>
-          <h1 className='text-center'>Prediction Market</h1>
-          <div className="jumbotron">
+          <div className='col-sm-12'>
+            <h1 className='text-center'>Prediction Market</h1>
+            <div className="jumbotron">
             <h1 className="display-4 text-center">Who will win the Phillipines election?</h1>
             <p className="lead text-center">Current odds</p>
             <div>
@@ -187,6 +191,7 @@ class App extends Component {
             </div>
           </div>
         </div>
+        <h5>Minimum bet: {entranceFee/(10**18)} ETH</h5>
       </div>
 
       <div className='row'>
@@ -199,7 +204,7 @@ class App extends Component {
                 <input 
                   type="text" 
                   className="form-control mb-2 mr-sm-2" 
-                  placeholder="Bet amount (ether)"
+                  placeholder="Bet amount (eth)"
                 />
                 <button 
                   type="submit" 
@@ -217,11 +222,11 @@ class App extends Component {
             <img src='./img/Pacquiao.png' />
             <div className="card-body">
               <h5 className="card-title">Pacquiao</h5>
-              <form className="form-inline">
+              <form className="form-inline" onSubmit={e => this.placeBet(SIDE.Pacquiao, e)}> 
                 <input 
                   type="text" 
                   className="form-control mb-2 mr-sm-2" 
-                  placeholder="Bet amount (ether)"
+                  placeholder="Bet amount (eth)"
                 />
                 <button 
                   type="submit" 
@@ -238,22 +243,15 @@ class App extends Component {
       <div className='row'>
         <h2>Your bets</h2>
         <ul>
-          <li>Marcos: {myBets[0].toString()} ETH (wei)</li>
-          <li>Pacquiao: {myBets[1].toString()} ETH (wei)</li>
+          <li>Marcos: {(myBets[0]/(10**18)).toString()} ETH</li>
+          <li>Pacquiao: {(myBets[1]/(10**18)).toString()} ETH</li>
         </ul>
       </div>
 
     <div className='row'>
-      <h2>Claim your gains, if any, after the election</h2>
-      <button 
-        type="submit" 
-        className="btn btn-primary mb-2"
-        onClick={e => this.withdrawGain()}
-      >
-        Submit
-      </button>
+      <h2>Winnings will be debited to your account after the election</h2> 
     </div>
-        </div>)}
+  </div>)}
 }
 
 export default App

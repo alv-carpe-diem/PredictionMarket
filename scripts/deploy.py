@@ -1,13 +1,14 @@
-from scripts.helpful_scripts import get_account
+from scripts.helpful_scripts import get_account, get_contract
 from brownie import PredictionMarket, config, network
 
 
 def deploy_predictionMarket():
-    (admin, market) = (get_account(), get_account())
+    owner = get_account()
 
     predictionMarket = PredictionMarket.deploy(
-        market,
-        {"from": admin},
+        owner,
+        get_contract("eth_usd_price_feed").address,
+        {"from": owner},
         publish_source=config["networks"][network.show_active()]["verify"],
     )
 
